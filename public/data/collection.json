@@ -1,0 +1,28 @@
+{
+  "packs": [
+    {
+      "id": "familiar",
+      "titleRu": "Знакомый мир",
+      "status": "playable",
+      "pieceCount": 8
+    },
+    {
+      "id": "europe",
+      "titleRu": "Европа",
+      "status": "locked",
+      "pieceCount": 12
+    },
+    {
+      "id": "continents",
+      "titleRu": "Континенты",
+      "status": "locked",
+      "pieceCount": 6
+    },
+    {
+      "id": "states",
+      "titleRu": "Штаты и провинции",
+      "status": "locked",
+      "pieceCount": 50
+    }
+  ]
+}
