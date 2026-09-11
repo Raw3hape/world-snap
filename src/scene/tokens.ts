@@ -19,6 +19,20 @@ export const R = 1
 export const TABLE_Y = -1.18
 export const CAM = { fov: 36, position: [0.18, 2.62, 4.45] as [number, number, number] }
 
+/** View axis from the table look-at to the default camera. */
+export const CAM_DIR = (() => {
+  const look = [0, -0.58, 0.32] as const
+  const d = [CAM.position[0] - look[0], CAM.position[1] - look[1], CAM.position[2] - look[2]] as const
+  const len = Math.hypot(d[0], d[1], d[2]) || 1
+  return [d[0] / len, d[1] / len, d[2] / len] as const
+})()
+
+export const ZOOM = {
+  distOut: 5.23,
+  distIn: 2.08,
+  distComplete: 5.45,
+} as const
+
 export const oceanColor = '#E2E3DF'
 
 export const bisque = {

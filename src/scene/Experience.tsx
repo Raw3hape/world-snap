@@ -25,7 +25,7 @@ import { Lamp } from './Lamp'
 import { Piece, type PiecePose } from './Piece'
 import { Table } from './Table'
 import { installBridge } from '../test/bridge'
-import { R, T, TABLE_Y, bisque, oceanColor } from './tokens'
+import { CAM_DIR, R, T, TABLE_Y, ZOOM, bisque, oceanColor } from './tokens'
 
 const tablePlane = new Plane(new Vector3(0, 1, 0), -TABLE_Y)
 const _ndc = new Vector2()
@@ -43,7 +43,8 @@ const _local = new Vector3()
 const _autoQ = new Quaternion()
 const _up = new Vector3(0, 1, 0)
 const _right = new Vector3()
-const _dest = new Vector3()
+const _look = new Vector3()
+const _camAxis = new Vector3(CAM_DIR[0], CAM_DIR[1], CAM_DIR[2])
 
 function tangentQuat(worldPoint: Vector3, target: Quaternion) {
   _normal.copy(worldPoint).normalize()
@@ -85,13 +86,28 @@ function KeyLight() {
   )
 }
 
-function Rig({ complete, reduced }: { complete: boolean; reduced: boolean }) {
+function GlobeRig({
+  complete,
+  reduced,
+  zoom,
+}: {
+  complete: boolean
+  reduced: boolean
+  zoom: { value: number; target: number }
+}) {
   const { camera } = useThree()
   useFrame((_, dt) => {
-    const dest = complete ? _dest.set(0.28, 2.85, 4.75) : _dest.set(0.18, 2.62, 4.45)
-    if (reduced) camera.position.copy(dest)
-    else camera.position.lerp(dest, 1 - Math.exp(-dt / (complete ? 0.45 : 0.22)))
-    camera.lookAt(0, complete ? -0.22 : -0.58, 0.32)
+    const k = reduced ? 1 : 1 - Math.exp(-dt / 0.14)
+    zoom.value += (zoom.target - zoom.value) * k
+    const u = zoom.value * zoom.value * (3 - 2 * zoom.value)
+    const dist = MathUtils.lerp(complete ? ZOOM.distComplete : ZOOM.distOut, ZOOM.distIn, u)
+    _look.set(
+      0,
+      MathUtils.lerp(complete ? -0.22 : -0.58, 0.05, u),
+      MathUtils.lerp(complete ? 0.28 : 0.32, 0, u),
+    )
+    camera.position.copy(_look).addScaledVector(_camAxis, dist)
+    camera.lookAt(_look)
   })
   return null
 }
@@ -102,6 +118,10 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
   const oceanRef = useRef<Mesh>(null)
   const spinning = useRef(false)
   const lastPtr = useRef({ x: 0, y: 0 })
+  const spinVel = useRef({ yaw: 0, pitch: 0 })
+  const zoom = useRef({ value: 0, target: 0 })
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<number | null>(null)
   const poses = useRef(new Map<string, PiecePose>())
   const drag = useRef({
     id: null as string | null,
@@ -142,13 +162,37 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
       return _ndc
     }
 
+    const bumpZoom = (delta: number) => {
+      zoom.current.target = MathUtils.clamp(zoom.current.target + delta, 0, 1)
+    }
+
+    const pinchDistance = () => {
+      const pts = [...pointers.current.values()]
+      if (pts.length < 2 || !pts[0] || !pts[1]) return null
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+    }
+
     const move = (ev: PointerEvent) => {
+      if (pointers.current.has(ev.pointerId)) {
+        pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+      }
+      if (!drag.current.active && pointers.current.size === 2) {
+        spinning.current = false
+        const d = pinchDistance()
+        if (d != null && pinch.current != null) bumpZoom((d - pinch.current) / 420)
+        pinch.current = d
+        return
+      }
       if (spinning.current && globeRef.current && !drag.current.active) {
         const dx = ev.clientX - lastPtr.current.x
         const dy = ev.clientY - lastPtr.current.y
-        globeRef.current.rotateOnWorldAxis(_up, (dx * 0.25 * Math.PI) / 180)
+        const yaw = (dx * 0.38 * Math.PI) / 180
+        const pitch = (dy * 0.32 * Math.PI) / 180
+        globeRef.current.rotateOnWorldAxis(_up, yaw)
         _right.set(1, 0, 0).applyQuaternion(camera.quaternion)
-        globeRef.current.rotateOnWorldAxis(_right, (dy * 0.25 * Math.PI) / 180)
+        globeRef.current.rotateOnWorldAxis(_right, pitch)
+        spinVel.current.yaw = yaw * 60
+        spinVel.current.pitch = pitch * 60
         lastPtr.current = { x: ev.clientX, y: ev.clientY }
         return
       }
@@ -159,8 +203,16 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
       drag.current.clientY = ev.clientY
     }
 
-    const up = () => {
+    const up = (ev?: PointerEvent) => {
+      if (ev) {
+        pointers.current.delete(ev.pointerId)
+        if (pointers.current.size < 2) pinch.current = null
+      } else {
+        pointers.current.clear()
+        pinch.current = null
+      }
       spinning.current = false
+      if (!drag.current.active) document.body.style.cursor = ''
       if (!drag.current.active || !drag.current.id) return
       const id = drag.current.id
       const g = useGame.getState()
@@ -188,6 +240,8 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
 
     const cancel = () => {
       spinning.current = false
+      pointers.current.clear()
+      pinch.current = null
       if (!drag.current.active) return
       const g = useGame.getState()
       g.setDragging(null)
@@ -197,20 +251,56 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
       drag.current.id = null
     }
 
+    const onCanvasDown = (ev: PointerEvent) => {
+      pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+      if (pointers.current.size >= 2) {
+        spinning.current = false
+        pinch.current = pinchDistance()
+      }
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      if (drag.current.active) return
+      e.preventDefault()
+      const step = e.deltaMode === 1 ? e.deltaY * 0.06 : e.deltaY * 0.0014
+      bumpZoom(-step)
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancel()
+      if (e.key === '=' || e.key === '+') bumpZoom(0.12)
+      if (e.key === '-' || e.key === '_') bumpZoom(-0.12)
+    }
+
+    const onDbl = (e: MouseEvent) => {
+      if (drag.current.active) return
+      const rect = canvas.getBoundingClientRect()
+      _ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      _ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+      _ray.setFromCamera(_ndc, camera)
+      const globe = globeRef.current
+      const ocean = oceanRef.current
+      if (!globe || !ocean) return
+      if (_ray.intersectObject(ocean, false).length) zoom.current.target = zoom.current.target > 0.45 ? 0 : 1
+    }
+
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('blur', cancel)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cancel()
-    }
     window.addEventListener('keydown', onKey)
+    canvas.addEventListener('pointerdown', onCanvasDown)
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    canvas.addEventListener('dblclick', onDbl)
     return () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
       window.removeEventListener('blur', cancel)
       window.removeEventListener('keydown', onKey)
+      canvas.removeEventListener('pointerdown', onCanvasDown)
+      canvas.removeEventListener('wheel', onWheel)
+      canvas.removeEventListener('dblclick', onDbl)
     }
   }, [camera, gl])
 
@@ -220,8 +310,17 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
     const g = useGame.getState()
     const dragging = drag.current.active && drag.current.id
 
-    if (globe && !dragging && !spinning.current && !reduced && (phase === 'title' || phase === 'complete')) {
-      globe.rotateY((Math.PI * 2 * dt) / (phase === 'complete' ? 240 : 180))
+    if (globe && !dragging && !spinning.current && pointers.current.size < 2) {
+      const damp = Math.exp(-dt / 0.9)
+      spinVel.current.yaw *= damp
+      spinVel.current.pitch *= damp
+      if (Math.abs(spinVel.current.yaw) > 0.002 || Math.abs(spinVel.current.pitch) > 0.002) {
+        globe.rotateOnWorldAxis(_up, spinVel.current.yaw * dt)
+        _right.set(1, 0, 0).applyQuaternion(camera.quaternion)
+        globe.rotateOnWorldAxis(_right, spinVel.current.pitch * dt)
+      } else if (!reduced && (phase === 'title' || phase === 'complete')) {
+        globe.rotateY((Math.PI * 2 * dt) / (phase === 'complete' ? 240 : 180))
+      }
     }
 
     visible.forEach((c, i) => {
@@ -335,8 +434,22 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
   const onGlobeDown = (e: ThreeEvent<PointerEvent>) => {
     if (drag.current.active) return
     e.stopPropagation()
+    const ev = e.nativeEvent
+    pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+    if (pointers.current.size >= 2) {
+      spinning.current = false
+      pinch.current = (() => {
+        const pts = [...pointers.current.values()]
+        if (!pts[0] || !pts[1]) return null
+        return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+      })()
+      return
+    }
     spinning.current = true
-    lastPtr.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY }
+    spinVel.current.yaw = 0
+    spinVel.current.pitch = 0
+    lastPtr.current = { x: ev.clientX, y: ev.clientY }
+    document.body.style.cursor = 'grabbing'
   }
 
   const tutorial = firstId && placed.length === 0
@@ -361,14 +474,26 @@ export function Experience({ pack, reduced }: { pack: Pack; reduced: boolean }) 
       <Suspense fallback={null}>
         <Environment preset="warehouse" environmentIntensity={0.28} />
       </Suspense>
-      <Rig complete={phase === 'complete'} reduced={reduced} />
+      <GlobeRig complete={phase === 'complete'} reduced={reduced} zoom={zoom.current} />
 
       <Table />
 
       <group ref={globeRef}>
         <mesh
+          onPointerDown={onGlobeDown}
+          visible={false}
+        >
+          <sphereGeometry args={[R * 1.14, 16, 12]} />
+        </mesh>
+        <mesh
           ref={oceanRef}
           onPointerDown={onGlobeDown}
+          onPointerOver={() => {
+            if (!drag.current.active) document.body.style.cursor = 'grab'
+          }}
+          onPointerOut={() => {
+            if (!spinning.current) document.body.style.cursor = ''
+          }}
           castShadow
           receiveShadow
         >
