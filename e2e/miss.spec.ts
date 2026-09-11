@@ -1,14 +1,5 @@
 import { expect, test } from '@playwright/test'
-import {
-  VIEWPORT,
-  chooseFirst,
-  emptyStorageState,
-  getGameState,
-  gotoFresh,
-  placeCountry,
-  pointerDragPieceToCountry,
-  saveShot,
-} from './helpers'
+import { VIEWPORT, emptyStorageState, getGameState, gotoFresh, saveShot } from './helpers'
 
 test.use({
   viewport: VIEWPORT,
@@ -16,18 +7,18 @@ test.use({
   storageState: emptyStorageState,
 })
 
-test('wrong country does not snap', async ({ page }) => {
+test('drop off the globe does not place', async ({ page }) => {
   await gotoFresh(page)
-  await page.getByRole('button', { name: 'К столу' }).click()
-  await expect(page.getByText('Выбери страну.')).toBeVisible()
-
-  await chooseFirst(page, 'IT')
-  for (const id of ['IT', 'JP', 'BR', 'AU', 'IN', 'MG'] as const) {
-    await placeCountry(page, id)
-  }
-
-  await pointerDragPieceToCountry(page, 'EG', 'BR')
+  await page.getByRole('button', { name: 'Начать' }).click()
+  const btn = page.locator('[data-iso="EG"]')
+  await btn.scrollIntoViewIfNeeded()
+  const box = await btn.boundingBox()
+  if (!box) throw new Error('no EG')
+  await page.mouse.move(box.x + box.width / 2, box.y + 8)
+  await page.mouse.down()
+  await page.mouse.move(48, 36, { steps: 20 })
+  await page.mouse.up()
   const state = await getGameState(page)
-  expect(state.placed, 'Egypt must not snap onto Brazil').not.toContain('EG')
+  expect(state.placed).not.toContain('EG')
   await saveShot(page, 'miss.png')
 })

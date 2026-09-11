@@ -17,6 +17,32 @@ import { latLonToVector3 } from './sphere'
 type Ring = number[][]
 type Polygon = Ring[]
 
+export type ProjectedPoint = { lon: number; lat: number; x: number; y: number }
+export type WoundPolygon = ProjectedPoint[][]
+
+export type Bounds = {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+  w: number
+  h: number
+}
+
+export type PieceFit = Bounds & {
+  longest: number
+  cohortMax: number
+  px: number
+  scale: number
+}
+
+const TRAY_MAX_PX = 52
+const TRAY_MIN_PX = 20
+const TRAY_PAD = 2
+const PIECE_TARGET = 0.7
+
+const ringsCache = new WeakMap<Country, WoundPolygon[]>()
+
 function polygonsOf(geometry: Geometry): Polygon[] {
   return geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
 }
@@ -46,11 +72,8 @@ function ensureWinding(ring: Ring, ccw: boolean) {
   return isCcw === ccw ? ring : ring.slice().reverse()
 }
 
-function projectRing(
-  ring: Ring,
-  project: (pt: [number, number]) => [number, number] | null,
-) {
-  const out: { lon: number; lat: number; x: number; y: number }[] = []
+function projectRing(ring: Ring, project: (pt: [number, number]) => [number, number] | null) {
+  const out: ProjectedPoint[] = []
   for (const pt of ring) {
     if (!pt || pt.length < 2) continue
     const lon = pt[0]
@@ -75,14 +98,35 @@ export function makeProjector(centroid: [number, number]) {
   }
 }
 
-export function projectedBounds(country: Country) {
+/** Wound projected rings from one azimuthal projector. Globe earcut and tray SVG share this. */
+export function countryRings(country: Country): WoundPolygon[] {
+  const hit = ringsCache.get(country)
+  if (hit) return hit
   const project = makeProjector(country.centroid)
+  const polygons: WoundPolygon[] = []
+  for (const polygon of polygonsOf(country.geometry)) {
+    const rings = polygon
+      .map((ring, i) => {
+        const opened = openRing(ring)
+        const wound = ensureWinding(opened, i === 0)
+        return projectRing(wound, project)
+      })
+      .filter((r) => r.length >= 3)
+    if (!rings[0] || rings[0].length < 3) continue
+    polygons.push(rings)
+  }
+  ringsCache.set(country, polygons)
+  return polygons
+}
+
+export function boundsFromRings(polygons: WoundPolygon[]): Bounds {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
-  for (const polygon of polygonsOf(country.geometry)) {
-    const outer = projectRing(openRing(polygon[0] ?? []), project)
+  for (const polygon of polygons) {
+    const outer = polygon[0]
+    if (!outer) continue
     for (const p of outer) {
       minX = Math.min(minX, p.x)
       minY = Math.min(minY, p.y)
@@ -94,31 +138,45 @@ export function projectedBounds(country: Country) {
   return { minX, minY, maxX, maxY, w: Math.max(maxX - minX, 1e-6), h: Math.max(maxY - minY, 1e-6) }
 }
 
+export function projectedBounds(country: Country) {
+  return boundsFromRings(countryRings(country))
+}
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, n))
+}
+
+export function continentCohort(countries: Country[], continent: string | undefined) {
+  return countries.filter((c) => c.continent === continent)
+}
+
+export function pieceFit(country: Country, cohort: Country[], maxPx = TRAY_MAX_PX): PieceFit {
+  const b = projectedBounds(country)
+  const longest = Math.max(b.w, b.h)
+  let cohortMax = 0
+  for (const c of cohort) {
+    const cb = projectedBounds(c)
+    cohortMax = Math.max(cohortMax, Math.max(cb.w, cb.h))
+  }
+  if (cohortMax < 1e-12) cohortMax = longest
+  const px = clamp((maxPx * longest) / cohortMax, TRAY_MIN_PX, maxPx)
+  const scale = px / longest
+  return { ...b, longest, cohortMax, px, scale }
+}
+
 export function buildGlobeGeometry(country: Country, radius: number) {
-  const project = makeProjector(country.centroid)
-  const bounds = projectedBounds(country)
+  const polygons = countryRings(country)
+  const bounds = boundsFromRings(polygons)
   const positions: number[] = []
   const normals: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
   const tmp = new Vector3()
-  const flagAspect = 1.5
-  const cx = (bounds.minX + bounds.maxX) / 2
-  const cy = (bounds.minY + bounds.maxY) / 2
-  const cover = Math.max(bounds.w / flagAspect, bounds.h)
+  const { minX, minY, w, h } = bounds
 
-  for (const polygon of polygonsOf(country.geometry)) {
-    const rings = polygon
-      .map((ring, i) => {
-        const opened = openRing(ring)
-        const wound = ensureWinding(opened, i === 0)
-        return projectRing(wound, project)
-      })
-      .filter((r) => r.length >= 3)
-    if (rings.length === 0 || (rings[0]?.length ?? 0) < 3) continue
-
+  for (const rings of polygons) {
     const verts2: number[] = []
-    const meta: { lon: number; lat: number; x: number; y: number }[] = []
+    const meta: ProjectedPoint[] = []
     const holes: number[] = []
     for (let i = 0; i < rings.length; i++) {
       const ring = rings[i]
@@ -129,6 +187,7 @@ export function buildGlobeGeometry(country: Country, radius: number) {
         meta.push(p)
       }
     }
+    if (meta.length < 3) continue
     const tris = earcut(verts2, holes, 2)
     const base = positions.length / 3
     for (const p of meta) {
@@ -136,7 +195,7 @@ export function buildGlobeGeometry(country: Country, radius: number) {
       positions.push(tmp.x, tmp.y, tmp.z)
       tmp.normalize()
       normals.push(tmp.x, tmp.y, tmp.z)
-      uvs.push((p.x - cx) / (flagAspect * cover) + 0.5, 1 - ((p.y - cy) / cover + 0.5))
+      uvs.push((p.x - minX) / w, 1 - (p.y - minY) / h)
     }
     for (const idx of tris) indices.push(base + idx)
   }
@@ -150,14 +209,7 @@ export function buildGlobeGeometry(country: Country, radius: number) {
   return geo
 }
 
-function shapeFromPolygon(polygon: Polygon, project: ReturnType<typeof makeProjector>, scale: number) {
-  const rings = polygon
-    .map((ring, i) => {
-      const opened = openRing(ring)
-      const wound = ensureWinding(opened, i === 0)
-      return projectRing(wound, project)
-    })
-    .filter((r) => r.length >= 3)
+function shapeFromRings(rings: WoundPolygon, scale: number) {
   const outer = rings[0]
   if (!outer || outer.length < 3) return null
   const shape = new Shape(outer.map((p) => new Vector2(p.x * scale, p.y * scale)))
@@ -169,22 +221,19 @@ function shapeFromPolygon(polygon: Polygon, project: ReturnType<typeof makeProje
   return shape
 }
 
-export function pieceFit(country: Country) {
-  const b = projectedBounds(country)
-  const longest = Math.max(b.w, b.h)
-  const target = 0.7
-  const scale = target / longest
-  return { ...b, scale, longest }
+function pieceShapes(country: Country, scale: number) {
+  const shapes: Shape[] = []
+  for (const rings of countryRings(country)) {
+    const shape = shapeFromRings(rings, scale)
+    if (shape) shapes.push(shape)
+  }
+  return shapes
 }
 
 export function buildPieceGeometry(country: Country, depth = 0.034) {
-  const project = makeProjector(country.centroid)
-  const { scale } = pieceFit(country)
-  const shapes: Shape[] = []
-  for (const polygon of polygonsOf(country.geometry)) {
-    const shape = shapeFromPolygon(polygon, project, scale)
-    if (shape) shapes.push(shape)
-  }
+  const b = projectedBounds(country)
+  const scale = PIECE_TARGET / Math.max(b.w, b.h)
+  const shapes = pieceShapes(country, scale)
   if (shapes.length === 0) return new BufferGeometry()
   const geos = shapes.map(
     (shape) =>
@@ -205,17 +254,38 @@ export function buildPieceGeometry(country: Country, depth = 0.034) {
 }
 
 export function buildSilhouetteShape(country: Country) {
-  const project = makeProjector(country.centroid)
-  const { scale } = pieceFit(country)
-  const shapes: Shape[] = []
-  for (const polygon of polygonsOf(country.geometry)) {
-    const shape = shapeFromPolygon(polygon, project, scale)
-    if (shape) shapes.push(shape)
-  }
+  const b = projectedBounds(country)
+  const scale = PIECE_TARGET / Math.max(b.w, b.h)
+  const shapes = pieceShapes(country, scale)
   if (shapes.length === 0) return new BufferGeometry()
   const geo = new ShapeGeometry(shapes, 2)
   geo.center()
   return geo
+}
+
+export function silhouetteSVG(country: Country, cohort: Country[], maxPx = TRAY_MAX_PX) {
+  const polygons = countryRings(country)
+  const fit = pieceFit(country, cohort, maxPx)
+  const { scale, minX, maxY, w, h } = fit
+  const parts: string[] = []
+  for (const rings of polygons) {
+    for (const ring of rings) {
+      if (ring.length < 3) continue
+      const cmds = ring.map((p, k) => {
+        const x = (p.x - minX) * scale + TRAY_PAD
+        const y = (maxY - p.y) * scale + TRAY_PAD
+        return `${k === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`
+      })
+      parts.push(`${cmds.join(' ')} Z`)
+    }
+  }
+  return {
+    d: parts.join(' '),
+    width: w * scale + TRAY_PAD * 2,
+    height: h * scale + TRAY_PAD * 2,
+    px: fit.px,
+    pad: TRAY_PAD,
+  }
 }
 
 export function pieceTableLayout(index: number, total: number, seed = 1) {

@@ -13,6 +13,7 @@ export interface Country {
   nameRu: string
   nameEn: string
   isoA2: IsoA2
+  continent?: string
   centroid: [number, number]
   bbox: [number, number, number, number]
   geometry: Geometry
@@ -37,7 +38,7 @@ export interface CollectionFile {
 }
 
 export interface SaveState {
-  version: 1
+  version: 2
   packId: string
   phase: Phase
   placed: IsoA2[]

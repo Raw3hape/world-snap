@@ -49,8 +49,9 @@ describe('snap', () => {
 
   it('fades hints over the pack', () => {
     expect(hintForIndex(0, true)).toBe('full')
-    expect(hintForIndex(3, false)).toBe('near')
-    expect(hintForIndex(7, false)).toBe('none')
+    expect(hintForIndex(3, false)).toBe('full')
+    expect(hintForIndex(20, false)).toBe('near')
+    expect(hintForIndex(50, false)).toBe('none')
   })
 
   it('measures polar distance in degrees', () => {

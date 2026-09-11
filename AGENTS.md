@@ -2,10 +2,10 @@
 
 Porcelain globe puzzle. Drag country silhouettes onto a white globe. Correct snap soaks the real flag into the silhouette.
 
-## Playable v0
+## Playable
 
-Pack `familiar` — 8 countries: IT JP BR AU IN MG EG GB.
-First pick from IT/JP/BR. Paint is optional. Hints fade by placement index.
+Pack `world` — 204 countries with flags. Light paper studio, globe + tray only.
+Fallback pack `familiar` — 8 countries: IT JP BR AU IN MG EG GB.
 
 ## Canonical docs
 

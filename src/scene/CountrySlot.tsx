@@ -5,7 +5,7 @@ import type { Country } from '../game/types'
 import { useGame } from '../game/store'
 import { buildGlobeGeometry } from '../geo/countryGeometry'
 import { loadFlagTexture } from '../geo/flags'
-import { painted, T } from './tokens'
+import { landMat, painted, T } from './tokens'
 
 export function CountrySlot({
   country,
@@ -21,7 +21,6 @@ export function CountrySlot({
   const geo = useMemo(() => buildGlobeGeometry(country, radius), [country, radius])
   const [flag, setFlag] = useState<CanvasTexture | null>(null)
   const soak = useRef(placed ? 1 : 0)
-  const scale = useRef(1)
   const meshRef = useRef<Mesh>(null)
   const matRef = useRef<MeshPhysicalMaterial>(null)
   const started = useRef(placed)
@@ -42,38 +41,35 @@ export function CountrySlot({
     if (placed && !started.current) {
       started.current = true
       soak.current = reduced ? 1 : 0
-      scale.current = reduced ? 1 : 1.016
     }
   }, [placed, reduced])
 
   useFrame((_, dt) => {
-    if (!placed) {
-      soak.current = 0
-      scale.current = 1
-    } else if (soak.current < 1) {
-      const speed = reduced ? 8 : 1 / 0.9
-      soak.current = Math.min(1, soak.current + dt * speed)
-      scale.current += (1 - scale.current) * Math.min(1, dt * 4)
-    }
-    if (meshRef.current) meshRef.current.scale.setScalar(scale.current)
+    if (!placed) soak.current = 0
+    else if (soak.current < 1) soak.current = Math.min(1, soak.current + dt * (reduced ? 8 : 1 / 0.7))
     const mat = matRef.current
     if (mat) {
       mat.opacity = soak.current
-      mat.roughness = painted.roughness + (0.2 - painted.roughness) * (1 - soak.current)
       mat.transparent = soak.current < 0.999
-      mat.needsUpdate = true
+      mat.depthWrite = soak.current > 0.8
     }
   })
 
   return (
-    <group>
-      {placed && !flag && (
-        <mesh geometry={geo} renderOrder={2}>
-          <meshPhysicalMaterial {...painted} color="#E6E2DA" side={DoubleSide} />
+    <group scale={1}>
+      {!placed && (
+        <mesh geometry={geo} renderOrder={1} scale={1}>
+          <meshPhysicalMaterial
+            {...landMat}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+          />
         </mesh>
       )}
       {placed && flag && (
-        <mesh ref={meshRef} geometry={geo} renderOrder={2}>
+        <mesh ref={meshRef} geometry={geo} renderOrder={2} scale={1}>
           <meshPhysicalMaterial
             ref={matRef}
             {...painted}
@@ -81,18 +77,35 @@ export function CountrySlot({
             side={DoubleSide}
             transparent
             opacity={soak.current}
-            depthWrite={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+          />
+        </mesh>
+      )}
+      {placed && !flag && (
+        <mesh geometry={geo} renderOrder={2} scale={1}>
+          <meshPhysicalMaterial
+            {...painted}
+            color={T.land}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
           />
         </mesh>
       )}
       {ghost && !placed && (
-        <mesh geometry={geo} renderOrder={3} scale={1.004}>
+        <mesh geometry={geo} renderOrder={3} scale={1}>
           <meshBasicMaterial
             color={T.hint}
             transparent
-            opacity={0.28}
+            opacity={0.35}
             side={DoubleSide}
             depthWrite={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
           />
         </mesh>
       )}

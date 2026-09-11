@@ -167,13 +167,11 @@ export async function waitForProjected(
   return world
 }
 
-export async function chooseFirst(page: Page, id: string) {
-  await page.evaluate((iso) => {
-    ;(window as BridgeWindow).__worldSnap!.getState().chooseFirst(iso)
-  }, id)
-  await page.waitForFunction((iso) => {
-    return (window as BridgeWindow).__worldSnap!.getState().firstId === iso
-  }, id)
+export async function chooseFirst(page: Page, _id: string) {
+  await page.evaluate(() => {
+    const g = (window as BridgeWindow).__worldSnap!.getState()
+    if (g.phase === 'title') g.toTable()
+  })
 }
 
 export async function paintCountry(page: Page, id: string) {
@@ -188,10 +186,8 @@ export async function placeCountry(page: Page, id: string) {
   }, id)
 }
 
-export async function openCollection(page: Page, open = true) {
-  await page.evaluate((value) => {
-    ;(window as BridgeWindow).__worldSnap!.getState().openCollection(value)
-  }, open)
+export async function openCollection(_page: Page, _open = true) {
+  /* collection UI removed */
 }
 
 export async function saveShot(page: Page, filename: string) {
@@ -253,7 +249,25 @@ export async function dragWorldToWorld(
 
 export async function pointerDragPieceToCountry(page: Page, pieceId: string, countryId: string) {
   await faceCountry(page, countryId)
-  const from = await waitForProjected(page, 'piece', pieceId)
+  const btn = page.locator(`[data-iso="${pieceId}"]`)
+  await btn.waitFor({ state: 'attached', timeout: 15_000 })
+  await btn.scrollIntoViewIfNeeded()
+  const box = await btn.boundingBox()
+  if (!box) throw new Error(`no tray box for ${pieceId}`)
   const to = await waitForProjected(page, 'country', countryId)
-  await dragWorldToWorld(page, from, to)
+  const dest = await pagePointFromWorld(page, to)
+  await page.mouse.move(box.x + box.width / 2, box.y + Math.min(12, box.height / 2))
+  await page.mouse.down({ button: 'left' })
+  await waitFrames(page, 2)
+  const dragging = await page.evaluate(
+    () => (window as BridgeWindow).__worldSnap?.getState().draggingId ?? null,
+  )
+  if (!dragging) {
+    await page.mouse.up()
+    throw new Error(`tray pointer down did not pick ${pieceId}`)
+  }
+  await page.mouse.move(dest.x, dest.y + MOUSE_LIFT_Y, { steps: 36 })
+  await waitMs(page, 400)
+  await page.mouse.up()
+  await waitFrames(page, 2)
 }

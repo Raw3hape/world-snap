@@ -5,14 +5,9 @@ import { useGame } from '../game/store'
 export function Hud({ total }: { total: number }) {
   const phase = useGame((s) => s.phase)
   const placed = useGame((s) => s.placed.length)
-  const firstId = useGame((s) => s.firstId)
-  const painted = useGame((s) => s.painted)
-  const draggingId = useGame((s) => s.draggingId)
-  const dragLabel = useGame((s) => s.dragLabel)
   const missAt = useGame((s) => s.missAt)
   const snapAt = useGame((s) => s.snapAt)
-  const collectionOpen = useGame((s) => s.collectionOpen)
-  const openCollection = useGame((s) => s.openCollection)
+  const replay = useGame((s) => s.replay)
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -21,20 +16,13 @@ export function Hud({ total }: { total: number }) {
     return () => window.clearInterval(id)
   }, [missAt, snapAt])
 
-  if (phase === 'title' || collectionOpen) return null
+  if (phase === 'title') return null
 
-  const miss = now - missAt < 1600
+  const miss = now - missAt < 1400
   let line = ''
+  if (miss) line = copy.miss
+  if (now - snapAt < 800) line = copy.snap
   if (phase === 'complete') line = copy.complete
-  else if (phase === 'choose-first' || !firstId) line = copy.choose
-  else if (placed === 0 && miss) line = copy.missHint
-  else if (placed === 0 && firstId && !painted.includes(firstId) && !draggingId) line = copy.paint
-  else if (placed === 0 && draggingId) line = copy.contour
-  else if (placed === 0) line = copy.place
-  else if (now - snapAt < 900) line = copy.snap
-  else if (placed === 1 && !draggingId) line = copy.scatter
-  else if (dragLabel) line = dragLabel
-  else if (placed < 3) line = copy.hint
 
   return (
     <header className="hud">
@@ -45,10 +33,12 @@ export function Hud({ total }: { total: number }) {
         </p>
       </div>
       <div className="hud-right">
-        <button type="button" className="ghost" onClick={() => openCollection(true)}>
-          {copy.collection}
-        </button>
         <p className="count">{copy.count(placed, total)}</p>
+        {phase === 'complete' && (
+          <button type="button" className="ghost" onClick={replay}>
+            {copy.replay}
+          </button>
+        )}
       </div>
     </header>
   )

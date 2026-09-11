@@ -3,8 +3,6 @@ import { hintForIndex } from './snap'
 import { emptySave, loadSave, writeSave } from './save'
 import type { HintLevel, IsoA2, Phase } from './types'
 
-const FIRST_CHOICES = new Set(['IT', 'JP', 'BR'])
-
 interface GameStore {
   phase: Phase
   packId: string
@@ -18,36 +16,35 @@ interface GameStore {
   dragLabel: string | null
   missAt: number
   snapAt: number
-  collectionOpen: boolean
-  muted: boolean
+  continent: string
+  query: string
   hydrate: () => void
   persist: () => void
   setPackSize: (n: number) => void
   toTable: () => void
-  chooseFirst: (id: IsoA2) => void
   paint: (id: IsoA2) => void
   place: (id: IsoA2) => void
   setDragging: (id: IsoA2 | null) => void
   setGhost: (id: IsoA2 | null) => void
   setDragLabel: (label: string | null) => void
   flashMiss: () => void
-  openCollection: (open: boolean) => void
   replay: () => void
-  toggleMute: () => void
+  setContinent: (id: string) => void
+  setQuery: (q: string) => void
   hintFor: (id: IsoA2) => HintLevel
   isOnTable: (id: IsoA2) => boolean
 }
 
 export const useGame = create<GameStore>((set, get) => ({
   ...emptySave(),
-  packSize: 8,
+  packSize: 0,
   draggingId: null,
   ghostId: null,
   dragLabel: null,
   missAt: 0,
   snapAt: 0,
-  collectionOpen: false,
-  muted: false,
+  continent: 'all',
+  query: '',
 
   hydrate: () => {
     const save = loadSave()
@@ -66,7 +63,7 @@ export const useGame = create<GameStore>((set, get) => ({
   persist: () => {
     const s = get()
     writeSave({
-      version: 1,
+      version: 2,
       packId: s.packId,
       phase: s.phase,
       placed: s.placed,
@@ -77,18 +74,7 @@ export const useGame = create<GameStore>((set, get) => ({
   },
 
   toTable: () => {
-    const { firstId, placed } = get()
-    set({
-      phase: firstId || placed.length ? 'play' : 'choose-first',
-      collectionOpen: false,
-    })
-    get().persist()
-  },
-
-  chooseFirst: (id) => {
-    if (!FIRST_CHOICES.has(id)) return
-    if (get().firstId) return
-    set({ firstId: id, phase: 'play' })
+    set({ phase: 'play' })
     get().persist()
   },
 
@@ -104,7 +90,7 @@ export const useGame = create<GameStore>((set, get) => ({
     if (s.placed.includes(id)) return
     const placed = [...s.placed, id]
     const painted = s.painted.includes(id) ? s.painted : [...s.painted, id]
-    const done = placed.length >= s.packSize
+    const done = s.packSize > 0 && placed.length >= s.packSize
     const collection = done
       ? { ...s.collection, [s.packId]: { completedAt: new Date().toISOString() } }
       : s.collection
@@ -113,48 +99,43 @@ export const useGame = create<GameStore>((set, get) => ({
       painted,
       draggingId: null,
       snapAt: Date.now(),
-      phase: done ? 'complete' : s.phase,
+      phase: done ? 'complete' : 'play',
       collection,
     })
     get().persist()
   },
 
-  setDragging: (id) => set({ draggingId: id, ghostId: id ? get().ghostId : null, dragLabel: id ? get().dragLabel : null }),
+  setDragging: (id) => set({ draggingId: id }),
   setGhost: (id) => set({ ghostId: id }),
   setDragLabel: (label) => set({ dragLabel: label }),
   flashMiss: () => set({ missAt: Date.now() }),
 
-  openCollection: (open) => set({ collectionOpen: open }),
-
   replay: () => {
     set({
-      phase: 'choose-first',
+      phase: 'play',
       placed: [],
       painted: [],
       firstId: null,
       draggingId: null,
       ghostId: null,
       dragLabel: null,
-      collectionOpen: false,
+      query: '',
     })
     get().persist()
   },
 
-  toggleMute: () => set({ muted: !get().muted }),
+  setContinent: (id) => set({ continent: id }),
+  setQuery: (q) => set({ query: q }),
 
   hintFor: (id) => {
-    const { placed, firstId } = get()
-    return hintForIndex(placed.length, id === firstId && !placed.includes(id))
+    const { placed } = get()
+    void id
+    return hintForIndex(placed.length, false)
   },
 
   isOnTable: (id) => {
-    const { phase, firstId, placed } = get()
+    const { phase, placed } = get()
     if (placed.includes(id)) return false
-    if (phase === 'title' || phase === 'complete') return false
-    if (!firstId) return FIRST_CHOICES.has(id)
-    if (placed.length === 0) return id === firstId
-    return true
+    return phase === 'play' || phase === 'complete'
   },
 }))
-
-export const FIRST_PIECES = ['IT', 'JP', 'BR'] as const

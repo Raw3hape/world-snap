@@ -1,66 +1,81 @@
 export const T = {
-  porcelain: '#E6E2DA',
-  porcelainWet: '#D4CFC6',
-  ink: '#0B1220',
-  brass: '#C4A15C',
-  brassDim: '#8A6A32',
-  lamp: '#FFC89A',
-  shade: '#2A2420',
-  walnut: '#1C1410',
-  oceanGhost: '#C5CFD4',
-  hint: '#A9C7D4',
-  miss: '#8A4E56',
-  sheen: '#EDE8E0',
-  moon: '#8AA4B8',
-  sky: '#1A2838',
+  paper: '#F4F1EA',
+  ink: '#1C1914',
+  mute: '#7A746A',
+  land: '#E6DFD4',
+  ocean: '#D0D8DC',
+  line: '#C6BFB4',
+  hint: '#3D7A8C',
+  miss: '#9A5A58',
+  porcelain: '#E6DFD4',
+  sheen: '#F6F2EA',
 } as const
 
 export const R = 1
-export const TABLE_Y = -1.18
-export const CAM = { fov: 36, position: [0.18, 2.62, 4.45] as [number, number, number] }
+export const OCEAN_R = 0.998
+export const LAND_R = 1.0008
+export const GLOBE_Y = 0
 
-/** View axis from the table look-at to the default camera. */
+export const ZOOM = {
+  distOut: 4.55,
+  distTitle: 4.8,
+  distIn: 1.95,
+  distComplete: 5.1,
+} as const
+
 export const CAM_DIR = (() => {
-  const look = [0, -0.58, 0.32] as const
-  const d = [CAM.position[0] - look[0], CAM.position[1] - look[1], CAM.position[2] - look[2]] as const
+  const d = [0, 0.06, 1] as const
   const len = Math.hypot(d[0], d[1], d[2]) || 1
   return [d[0] / len, d[1] / len, d[2] / len] as const
 })()
 
-export const ZOOM = {
-  distOut: 5.23,
-  distIn: 2.08,
-  distComplete: 5.45,
-} as const
+export const CAM = {
+  fov: 34,
+  position: [
+    CAM_DIR[0] * ZOOM.distOut,
+    GLOBE_Y + CAM_DIR[1] * ZOOM.distOut,
+    CAM_DIR[2] * ZOOM.distOut,
+  ] as [number, number, number],
+}
 
-export const oceanColor = '#E2E3DF'
+export const oceanColor = T.ocean
 
 export const bisque = {
-  color: T.porcelain,
-  roughness: 0.62,
+  color: T.ocean,
+  roughness: 0.58,
   metalness: 0,
-  clearcoat: 0.18,
-  clearcoatRoughness: 0.55,
-  sheen: 1,
-  sheenColor: T.sheen,
-  sheenRoughness: 0.75,
-  envMapIntensity: 0.4,
+  clearcoat: 0.08,
+  clearcoatRoughness: 0.7,
+  sheen: 0.2,
+  sheenColor: T.paper,
+  sheenRoughness: 0.7,
+  envMapIntensity: 0,
   ior: 1.5,
-  specularIntensity: 0.35,
-  specularColor: '#F5F0E8',
+  specularIntensity: 0.18,
+  specularColor: '#FFFFFF',
+} as const
+
+export const landMat = {
+  color: T.land,
+  roughness: 0.74,
+  metalness: 0,
+  clearcoat: 0.04,
+  clearcoatRoughness: 0.55,
+  sheen: 0.12,
+  sheenColor: T.sheen,
+  envMapIntensity: 0,
 } as const
 
 export const painted = {
   color: '#FFFFFF',
-  roughness: 0.3,
+  roughness: 0.38,
   metalness: 0,
-  clearcoat: 0.45,
-  clearcoatRoughness: 0.28,
-  sheen: 0.35,
-  sheenColor: '#F2EDE6',
-  sheenRoughness: 0.55,
-  envMapIntensity: 0.7,
+  clearcoat: 0.2,
+  clearcoatRoughness: 0.3,
+  sheen: 0.2,
+  sheenColor: '#F7F4EE',
+  envMapIntensity: 0,
   ior: 1.5,
-  specularIntensity: 0.5,
-  specularColor: '#F5F0E8',
+  specularIntensity: 0.28,
+  specularColor: '#FFFFFF',
 } as const

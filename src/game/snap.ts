@@ -42,7 +42,9 @@ export const MAGNET = {
 
 export function hintForIndex(placedCount: number, isTutorial: boolean): HintLevel {
   if (isTutorial) return 'full'
-  return HINT_BY_PLACED[Math.min(placedCount, HINT_BY_PLACED.length - 1)] ?? 'none'
+  if (placedCount < 12) return 'full'
+  if (placedCount < 50) return 'near'
+  return 'none'
 }
 
 export function polarDistanceDeg(a: [number, number], b: [number, number]) {

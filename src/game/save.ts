@@ -1,10 +1,10 @@
 import type { Phase, SaveState } from './types'
 
-export const SAVE_KEY = 'world-snap-v1'
+export const SAVE_KEY = 'world-snap-v2'
 
 export const emptySave = (): SaveState => ({
-  version: 1,
-  packId: 'familiar',
+  version: 2,
+  packId: 'world',
   phase: 'title',
   placed: [],
   painted: [],
@@ -17,11 +17,11 @@ export function loadSave(): SaveState {
     const raw = localStorage.getItem(SAVE_KEY)
     if (!raw) return emptySave()
     const parsed = JSON.parse(raw) as Partial<SaveState>
-    if (parsed.version !== 1) return emptySave()
+    if (parsed.version !== 2) return emptySave()
     return {
       ...emptySave(),
       ...parsed,
-      version: 1,
+      version: 2,
       placed: Array.isArray(parsed.placed) ? parsed.placed : [],
       painted: Array.isArray(parsed.painted) ? parsed.painted : [],
       collection: parsed.collection ?? {},
